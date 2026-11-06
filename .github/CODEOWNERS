@@ -1,0 +1,10 @@
+# Substitua os placeholders pelos usuários do GitHub de cada integrante (ver CONTRIBUTING.md)
+# e descomente as linhas.
+# *                          <integrante-1> <integrante-2> <integrante-3> <integrante-4> <integrante-5>
+# /commons/                  <integrante-1>
+# /receber-avaliacao/        <integrante-2>
+# /notificar-critico/        <integrante-3>
+# /gerar-relatorio-semanal/  <integrante-4>
+# /infra/                    <integrante-5>
+# /scripts/                  <integrante-5>
+# /stack.yml                 <integrante-5>

@@ -1,0 +1,27 @@
+Assunto: Relatório semanal de avaliações - 2025-W01
+De: feedback@cloudlab.local
+Para: coordenacao@fiap.local
+
+Relatório semanal de avaliações - semana 2025-W01 (2024-12-30 a 2025-01-05)
+
+Total de avaliações: 0
+Média geral das notas: sem avaliações
+
+Quantidade por urgência:
+  CRITICA   0
+  MODERADA  0
+  BAIXA     0
+
+Quantidade por dia:
+  2024-12-30 0
+  2024-12-31 0
+  2025-01-01 0
+  2025-01-02 0
+  2025-01-03 0
+  2025-01-04 0
+  2025-01-05 0
+
+Relatório completo (login de administrador no MinIO):
+  http://cloudlab:9001/browser/feedback-relatorios
+  objetos: relatorios/2025-W01.csv e relatorios/2025-W01.json
+

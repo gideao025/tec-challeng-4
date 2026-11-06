@@ -1,0 +1,246 @@
+# Serviços de apoio da plataforma (Docker Engine). As funções e o gateway do OpenFaaS
+# rodam no faasd (containerd) — ver infra/faasd/docker-compose.yaml.
+#
+# Uso: make up   (equivale a: scripts/preparar.sh && docker compose --env-file .env -f infra/docker-compose.yaml up -d --wait)
+name: feedback
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+services:
+  # ---------------------------------------------------------------- identidade
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina no .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 256m
+    restart: unless-stopped
+    logging: *logging
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    command: ["start", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      # Hostname fixo => claim "iss" estável, validada pelo Kong.
+      KC_HOSTNAME: ${KEYCLOAK_URL:?defina no .env}
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?defina no .env}
+      # Placeholders resolvidos na importação de keycloak/realm-feedback.json
+      KC_RSA_PRIVATE_KEY: ${KC_RSA_PRIVATE_KEY:?rode scripts/preparar.sh}
+      KC_SENHA_ALUNO_DEMO: ${KC_SENHA_ALUNO_DEMO}
+      KC_SENHA_ADMIN_DEMO: ${KC_SENHA_ADMIN_DEMO}
+      JAVA_OPTS_KC_HEAP: "-XX:MaxRAMPercentage=70"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+    ports:
+      - "8180:8080"
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    mem_limit: 900m
+    restart: unless-stopped
+    logging: *logging
+
+  # ---------------------------------------------------------------- API gateway
+  kong:
+    image: kong:3.9
+    # Rede do host: alcança o gateway do faasd em 127.0.0.1:8080 (que não é exposto).
+    network_mode: host
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/kong.yaml
+      KONG_PROXY_LISTEN: "0.0.0.0:8000"
+      KONG_ADMIN_LISTEN: "off"
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_HEADERS: "latency_tokens"   # não anuncia a versão do Kong
+    volumes:
+      - ./.gerado/kong.yaml:/kong/kong.yaml:ro
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 384m
+    restart: unless-stopped
+    logging: *logging
+
+  # ---------------------------------------------------------------- dados
+  scylla:
+    image: scylladb/scylla:6.2
+    command:
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=256M
+      - --overprovisioned=1
+      - --developer-mode=1
+      - --alternator-port=8000
+      - --alternator-address=0.0.0.0
+      # LWT necessário para ConditionExpression (deduplicação do notificar-critico)
+      - --alternator-write-isolation=only_rmw_uses_lwt
+    volumes:
+      - scylla-data:/var/lib/scylla
+    ports:
+      - "${HOST_INTERNO:-172.17.0.1}:8200:8000"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8000 && printf 'GET / HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q healthy <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+    mem_limit: 1536m
+    restart: unless-stopped
+    logging: *logging
+
+  minio:
+    # As imagens oficiais minio/minio deixaram de ser publicadas em 2025; usamos o build
+    # comunitário da Chainguard (mesmo binário AGPL), fixado por digest.
+    image: cgr.dev/chainguard/minio:latest-dev@sha256:56fd0ffb3e0f7f0bf4ba08fadda17ca8c7769bffdf9af120a0a50e9145185465
+    command: ["server", "/data", "--console-address", ":9001"]
+    user: "0"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?defina no .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?defina no .env}
+    volumes:
+      - minio-data:/data
+    ports:
+      - "${HOST_INTERNO:-172.17.0.1}:9000:9000"   # API S3: só funções
+      - "9001:9001"                                # console: administradores
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 384m
+    restart: unless-stopped
+    logging: *logging
+
+  # Execução única (make up): bucket privado, políticas e usuários.
+  minio-init:
+    image: cgr.dev/chainguard/minio:latest-dev@sha256:56fd0ffb3e0f7f0bf4ba08fadda17ca8c7769bffdf9af120a0a50e9145185465
+    profiles: ["init"]
+    entrypoint: ["/bin/sh", "/init.sh"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:-feedback-relatorios}
+      MINIO_SVC_ACCESS_KEY: ${MINIO_SVC_ACCESS_KEY}
+      MINIO_SVC_SECRET_KEY: ${MINIO_SVC_SECRET_KEY}
+      MINIO_ADMIN_USER: ${MINIO_ADMIN_USER}
+      MINIO_ADMIN_PASSWORD: ${MINIO_ADMIN_PASSWORD}
+    volumes:
+      - ./minio/init.sh:/init.sh:ro
+    depends_on:
+      minio: { condition: service_healthy }
+
+  # ---------------------------------------------------------------- e-mail
+  mailpit:
+    image: axllent/mailpit:v1.33.0
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: "5000"
+    volumes:
+      - mailpit-data:/data
+    ports:
+      - "${HOST_INTERNO:-172.17.0.1}:1025:1025"   # SMTP: funções e Grafana
+      - "8025:8025"                                # UI web
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 128m
+    restart: unless-stopped
+    logging: *logging
+
+  # ---------------------------------------------------------------- observabilidade
+  loki:
+    image: grafana/loki:3.7.0
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - loki-data:/loki
+    ports:
+      - "127.0.0.1:3100:3100"
+    # Imagem distroless (sem shell): a prontidão do Loki é verificada pelo healthcheck do Alloy.
+    mem_limit: 384m
+    restart: unless-stopped
+    logging: *logging
+
+  alloy:
+    image: grafana/alloy:v1.21.3
+    command: ["run", "/etc/alloy/config.alloy", "--server.http.listen-addr=0.0.0.0:12345", "--storage.path=/var/lib/alloy/data"]
+    user: "0"   # leitura do journald do host
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/log/journal:/var/log/journal:ro
+      - /run/log/journal:/run/log/journal:ro
+      - /etc/machine-id:/etc/machine-id:ro
+      - alloy-data:/var/lib/alloy/data
+    depends_on:
+      - loki
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/loki/3100 && printf 'GET /ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q ready <&3"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    mem_limit: 256m
+    restart: unless-stopped
+    logging: *logging
+
+  grafana:
+    image: grafana/grafana:12.3.0
+    # Rede do host: lê o Prometheus do faasd (127.0.0.1:9090) e o Loki (127.0.0.1:3100).
+    network_mode: host
+    environment:
+      GF_SERVER_HTTP_PORT: "3000"
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASSWORD:?defina no .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SMTP_ENABLED: "true"
+      GF_SMTP_HOST: ${HOST_INTERNO:-172.17.0.1}:1025
+      GF_SMTP_FROM_ADDRESS: ${EMAIL_REMETENTE}
+      EMAIL_ADMINS: ${EMAIL_ADMINS}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - loki
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 256m
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  postgres-data:
+  scylla-data:
+  minio-data:
+  mailpit-data:
+  loki-data:
+  alloy-data:
+  grafana-data:

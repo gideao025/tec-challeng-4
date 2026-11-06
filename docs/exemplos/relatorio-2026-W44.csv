@@ -1,0 +1,21 @@
+semana,inicio,fim,total_avaliacoes,media_notas
+2026-W44,2026-10-30,2026-11-05,3,5.33
+
+dia,quantidade
+2026-10-30,0
+2026-10-31,0
+2026-11-01,0
+2026-11-02,0
+2026-11-03,0
+2026-11-04,0
+2026-11-05,3
+
+urgencia,quantidade
+CRITICA,1
+MODERADA,1
+BAIXA,1
+
+id,data_envio_brasilia,urgencia,nota,descricao
+fd8bd9b2-3eeb-4bc6-993f-7f7948613149,"05/11/2026 19:09:27 (horário de Brasília)",CRITICA,2,"Aula nota 2"
+134a7175-9c06-4063-9ffd-960b6ab5c70b,"05/11/2026 19:09:28 (horário de Brasília)",MODERADA,5,"Aula nota 5"
+6a1c9640-f7bc-428d-973d-7dda3f2838df,"05/11/2026 19:09:28 (horário de Brasília)",BAIXA,9,"Aula nota 9"

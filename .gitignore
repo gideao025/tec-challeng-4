@@ -1,0 +1,10 @@
+.env
+infra/.gerado/
+target/
+*.tfstate*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+.idea/
+.vscode/
+*.iml

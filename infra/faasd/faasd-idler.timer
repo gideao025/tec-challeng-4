@@ -1,0 +1,9 @@
+[Unit]
+Description=Executa o faasd-idler a cada minuto
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+
+[Install]
+WantedBy=timers.target

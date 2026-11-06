@@ -1,0 +1,15 @@
+Assunto: [ALERTA] Avaliação CRÍTICA recebida - nota 2
+De: feedback@cloudlab.local
+Para: coordenacao@fiap.local
+
+Uma avaliação de aula foi classificada como CRÍTICA e requer atenção.
+
+Descrição:      Aula nota 2
+Urgência:       CRITICA
+Data de envio:  05/11/2026 19:09:27 (horário de Brasília)
+Nota:           2
+ID:             fd8bd9b2-3eeb-4bc6-993f-7f7948613149
+
+--
+Plataforma de Feedback de Aulas (alerta automático; não responda este e-mail).
+

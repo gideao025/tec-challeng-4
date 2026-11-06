@@ -1,0 +1,82 @@
+asyncapi: 3.0.0
+info:
+  title: Feedback de Aulas - eventos de domínio
+  version: 0.1.0
+  description: |
+    Eventos publicados no NATS JetStream (stream `AVALIACOES`, subjects `avaliacao.>`,
+    retenção de 30 dias, janela de deduplicação de 5 min por `Nats-Msg-Id`).
+    Formato CloudEvents 1.0 em modo estruturado (JSON).
+defaultContentType: application/cloudevents+json
+servers:
+  cloudlab:
+    host: nats-js:4222
+    protocol: nats
+    description: NATS com JetStream no compose do faasd (resolvível pelas funções via /etc/hosts do faasd).
+channels:
+  avaliacaoCriada:
+    address: avaliacao.criada
+    description: Uma avaliação foi validada, classificada e gravada.
+    messages:
+      avaliacaoCriada:
+        $ref: "#/components/messages/AvaliacaoCriada"
+operations:
+  publicarAvaliacaoCriada:
+    action: send
+    channel: { $ref: "#/channels/avaliacaoCriada" }
+    summary: Publicado por receber-avaliacao após o PutItem (aguarda ack do JetStream).
+  notificarCritico:
+    action: receive
+    channel: { $ref: "#/channels/avaliacaoCriada" }
+    summary: Consumido por notificar-critico via nats-connector (anotação topic). Ignora urgências diferentes de CRITICA; idempotente pelo data.id.
+components:
+  messages:
+    AvaliacaoCriada:
+      name: avaliacao.criada
+      headers:
+        type: object
+        properties:
+          Nats-Msg-Id: { type: string, description: Igual ao id do CloudEvent (deduplicação do JetStream) }
+          ce-type: { type: string, const: avaliacao.criada }
+          Content-Type: { type: string, const: application/cloudevents+json }
+      payload:
+        $ref: "#/components/schemas/CloudEventAvaliacaoCriada"
+      examples:
+        - name: critica
+          payload:
+            specversion: "1.0"
+            id: 82d783b1-d837-416c-b6b0-1b5b188f06fa
+            source: /funcoes/receber-avaliacao
+            type: avaliacao.criada
+            time: "2026-11-05T22:09:28.003Z"
+            datacontenttype: application/json
+            correlationid: teste-123
+            data:
+              id: fd8bd9b2-3eeb-4bc6-993f-7f7948613149
+              descricao: Aula nota 2
+              nota: 2
+              urgencia: CRITICA
+              dataEnvio: "2026-11-05T22:09:27.965Z"
+  schemas:
+    CloudEventAvaliacaoCriada:
+      type: object
+      required: [specversion, id, source, type, time, data]
+      properties:
+        specversion: { type: string, const: "1.0" }
+        id: { type: string, format: uuid }
+        source: { type: string, const: /funcoes/receber-avaliacao }
+        type: { type: string, const: avaliacao.criada }
+        time: { type: string, format: date-time }
+        datacontenttype: { type: string, const: application/json }
+        correlationid:
+          type: string
+          description: Extensão CloudEvents com o X-Correlation-ID gerado pelo Kong.
+        data:
+          type: object
+          description: Avaliação sem alunoId (minimização de dados, LGPD).
+          required: [id, descricao, nota, urgencia, dataEnvio]
+          properties:
+            id: { type: string, format: uuid }
+            descricao: { type: string }
+            nota: { type: integer, minimum: 0, maximum: 10 }
+            urgencia: { type: string, enum: [CRITICA, MODERADA, BAIXA] }
+            dataEnvio: { type: string, format: date-time }

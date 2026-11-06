@@ -1,0 +1,27 @@
+Assunto: Relatório semanal de avaliações - 2026-W44
+De: feedback@cloudlab.local
+Para: coordenacao@fiap.local
+
+Relatório semanal de avaliações - semana 2026-W44 (2026-10-30 a 2026-11-05)
+
+Total de avaliações: 3
+Média geral das notas: 5.33
+
+Quantidade por urgência:
+  CRITICA   1
+  MODERADA  1
+  BAIXA     1
+
+Quantidade por dia:
+  2026-10-30 0
+  2026-10-31 0
+  2026-11-01 0
+  2026-11-02 0
+  2026-11-03 0
+  2026-11-04 0
+  2026-11-05 3
+
+Relatório completo (login de administrador no MinIO):
+  http://cloudlab:9001/browser/feedback-relatorios
+  objetos: relatorios/2026-W44.csv e relatorios/2026-W44.json
+

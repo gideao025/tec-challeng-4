@@ -1,0 +1,42 @@
+// Coleta os logs das funções do faasd no journald do host e envia ao Loki.
+// O faasd grava o stdout de cada função com SYSLOG_IDENTIFIER=openfaas-fn:<funcao>.
+
+loki.relabel "faasd" {
+  forward_to = []
+
+  rule {
+    source_labels = ["__journal_syslog_identifier"]
+    regex         = "openfaas-fn:(.+)"
+    action        = "keep"
+  }
+  rule {
+    source_labels = ["__journal_syslog_identifier"]
+    regex         = "openfaas-fn:(.+)"
+    target_label  = "funcao"
+  }
+}
+
+loki.source.journal "faasd" {
+  path          = "/var/log/journal"
+  relabel_rules = loki.relabel.faasd.rules
+  labels        = { job = "faasd" }
+  forward_to    = [loki.process.json.receiver]
+}
+
+// Logs das funções são JSON (commons Log): promove o nível a label; o resto
+// (evento, urgencia, correlationId) é consultado com `| json` no LogQL.
+loki.process "json" {
+  stage.json {
+    expressions = { nivel = "nivel" }
+  }
+  stage.labels {
+    values = { nivel = "" }
+  }
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

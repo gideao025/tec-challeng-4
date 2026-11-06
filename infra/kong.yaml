@@ -1,0 +1,64 @@
+# Kong Gateway DB-less (configuração declarativa).
+# Template: os placeholders (cifrão + chaves) são resolvidos por scripts/preparar.sh
+# a partir do .env, gerando infra/.gerado/kong.yaml (montado no container).
+_format_version: "3.0"
+_transform: true
+
+services:
+  - name: receber-avaliacao
+    # Gateway do faasd, publicado apenas em loopback (Kong usa a rede do host).
+    url: http://127.0.0.1:8080/function/receber-avaliacao
+    connect_timeout: 5000
+    read_timeout: 30000
+    routes:
+      - name: avaliacao
+        paths: ["/avaliacao"]
+        methods: ["POST", "OPTIONS"]
+        strip_path: true
+        protocols: ["http", "https"]
+    plugins:
+      - name: jwt
+        config:
+          # O consumer é localizado pela claim "iss" = issuer do realm feedback no Keycloak.
+          key_claim_name: iss
+          claims_to_verify: ["exp"]
+          header_names: ["authorization"]
+          uri_param_names: []
+          cookie_names: []
+          run_on_preflight: false
+      - name: rate-limiting
+        config:
+          minute: 30
+          hour: 500
+          policy: local
+          limit_by: ip
+          error_code: 429
+          error_message: "Limite de requisições excedido. Tente novamente em instantes."
+      - name: cors
+        config:
+          origins: ["${CORS_ORIGIN}"]
+          methods: ["POST", "OPTIONS"]
+          headers: ["Authorization", "Content-Type", "X-Correlation-ID"]
+          exposed_headers: ["X-Correlation-ID"]
+          credentials: false
+          max_age: 3600
+      - name: request-size-limiting
+        config:
+          allowed_payload_size: 16
+          size_unit: kilobytes
+
+consumers:
+  - username: keycloak-realm-feedback
+    jwt_secrets:
+      - key: "${KEYCLOAK_ISSUER}"
+        algorithm: RS256
+        rsa_public_key: |
+${JWT_PUBLIC_KEY}
+
+plugins:
+  # Gera (ou repassa) X-Correlation-ID; as funções o registram em todo log e evento.
+  - name: correlation-id
+    config:
+      header_name: X-Correlation-ID
+      generator: uuid
+      echo_downstream: true

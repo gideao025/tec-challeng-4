@@ -1,0 +1,38 @@
+#cloud-config
+hostname: cloudlab
+fqdn: cloudlab.lan
+timezone: America/Sao_Paulo
+package_update: true
+packages:
+  - ca-certificates
+  - curl
+  - git
+  - make
+  - jq
+  - openssl
+  - bridge-utils
+  - iptables
+  - qemu-guest-agent
+  - openjdk-21-jdk-headless   # build das funções (./mvnw) na própria VM
+
+users:
+  - name: ${usuario}
+    groups: [sudo]
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    ssh_authorized_keys:
+%{ for k in ssh_public_keys ~}
+      - ${k}
+%{ endfor ~}
+
+write_files:
+  - path: /usr/local/sbin/instalar-cloudlab.sh
+    permissions: "0755"
+    content: |
+      ${indent(6, script_instalar)}
+
+runcmd:
+  - systemctl enable --now qemu-guest-agent
+  - /usr/local/sbin/instalar-cloudlab.sh ${usuario}
+  - git clone ${repo_url} /opt/feedback
+  - chown -R ${usuario}:${usuario} /opt/feedback

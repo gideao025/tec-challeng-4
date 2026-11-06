@@ -1,0 +1,855 @@
+{
+  "info": {
+    "_postman_id": "ac88e4fe-4ff2-44b9-bbca-868b62d8e768",
+    "name": "Feedback de Aulas - Tech Challenge Fase 4",
+    "description": "Fluxo completo: token no Keycloak, avaliações de cada urgência e casos de erro (401, 403, 400, 429). Rode na ordem (Runner).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "kong_url",
+      "value": "http://cloudlab:8000"
+    },
+    {
+      "key": "keycloak_url",
+      "value": "http://cloudlab:8180"
+    },
+    {
+      "key": "senha_aluno",
+      "value": "<KC_SENHA_ALUNO_DEMO do .env>"
+    },
+    {
+      "key": "senha_admin",
+      "value": "<KC_SENHA_ADMIN_DEMO do .env>"
+    },
+    {
+      "key": "token_aluno",
+      "value": ""
+    },
+    {
+      "key": "token_admin",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Autenticação (Keycloak)",
+      "item": [
+        {
+          "name": "Token do aluno",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "client_id",
+                  "value": "feedback-app"
+                },
+                {
+                  "key": "grant_type",
+                  "value": "password"
+                },
+                {
+                  "key": "username",
+                  "value": "aluno.demo"
+                },
+                {
+                  "key": "password",
+                  "value": "{{senha_aluno}}"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{keycloak_url}}/realms/feedback/protocol/openid-connect/token",
+              "host": [
+                "{{keycloak_url}}"
+              ],
+              "path": [
+                "realms",
+                "feedback",
+                "protocol",
+                "openid-connect",
+                "token"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 - token emitido', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_aluno', pm.response.json().access_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Token do admin",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "client_id",
+                  "value": "feedback-app"
+                },
+                {
+                  "key": "grant_type",
+                  "value": "password"
+                },
+                {
+                  "key": "username",
+                  "value": "admin.demo"
+                },
+                {
+                  "key": "password",
+                  "value": "{{senha_admin}}"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{keycloak_url}}/realms/feedback/protocol/openid-connect/token",
+              "host": [
+                "{{keycloak_url}}"
+              ],
+              "path": [
+                "realms",
+                "feedback",
+                "protocol",
+                "openid-connect",
+                "token"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 - token emitido', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_admin', pm.response.json().access_token);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Avaliações por urgência",
+      "item": [
+        {
+          "name": "CRITICA - nota 2",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_aluno}}"
+              }
+            ],
+            "url": {
+              "raw": "{{kong_url}}/avaliacao",
+              "host": [
+                "{{kong_url}}"
+              ],
+              "path": [
+                "avaliacao"
+              ]
+            },
+            "description": "Dispara e-mail de alerta (ver Mailpit :8025).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"descricao\": \"O professor não compareceu e não houve aviso.\",\n  \"nota\": 2\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('urgencia = CRITICA', () => pm.expect(pm.response.json().urgencia).to.eql('CRITICA'));",
+                  "pm.test('retorna id e dataEnvio', () => { const b = pm.response.json(); pm.expect(b.id).to.be.a('string'); pm.expect(b.dataEnvio).to.match(/Z$/); });",
+                  "pm.test('X-Correlation-ID do Kong', () => pm.response.to.have.header('X-Correlation-ID'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CRITICA - fronteira nota 3",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_aluno}}"
+              }
+            ],
+            "url": {
+              "raw": "{{kong_url}}/avaliacao",
+              "host": [
+                "{{kong_url}}"
+              ],
+              "path": [
+                "avaliacao"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"descricao\": \"Áudio inaudível durante toda a aula.\",\n  \"nota\": 3\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('urgencia = CRITICA', () => pm.expect(pm.response.json().urgencia).to.eql('CRITICA'));",
+                  "pm.test('retorna id e dataEnvio', () => { const b = pm.response.json(); pm.expect(b.id).to.be.a('string'); pm.expect(b.dataEnvio).to.match(/Z$/); });",
+                  "pm.test('X-Correlation-ID do Kong', () => pm.response.to.have.header('X-Correlation-ID'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "MODERADA - fronteira nota 4",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_aluno}}"
+              }
+            ],
+            "url": {
+              "raw": "{{kong_url}}/avaliacao",
+              "host": [
+                "{{kong_url}}"
+              ],
+              "path": [
+                "avaliacao"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"descricao\": \"Conteúdo bom, mas a aula atrasou 20 minutos.\",\n  \"nota\": 4\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('urgencia = MODERADA', () => pm.expect(pm.response.json().urgencia).to.eql('MODERADA'));",
+                  "pm.test('retorna id e dataEnvio', () => { const b = pm.response.json(); pm.expect(b.id).to.be.a('string'); pm.expect(b.dataEnvio).to.match(/Z$/); });",
+                  "pm.test('X-Correlation-ID do Kong', () => pm.response.to.have.header('X-Correlation-ID'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "MODERADA - nota 6",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_aluno}}"
+              }
+            ],
+            "url": {
+              "raw": "{{kong_url}}/avaliacao",
+              "host": [
+                "{{kong_url}}"
+              ],
+              "path": [
+                "avaliacao"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"descricao\": \"Slides desatualizados em relação ao material.\",\n  \"nota\": 6\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('urgencia = MODERADA', () => pm.expect(pm.response.json().urgencia).to.eql('MODERADA'));",
+                  "pm.test('retorna id e dataEnvio', () => { const b = pm.response.json(); pm.expect(b.id).to.be.a('string'); pm.expect(b.dataEnvio).to.match(/Z$/); });",
+                  "pm.test('X-Correlation-ID do Kong', () => pm.response.to.have.header('X-Correlation-ID'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "BAIXA - fronteira nota 7",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_aluno}}"
+              }
+            ],
+            "url": {
+              "raw": "{{kong_url}}/avaliacao",
+              "host": [
+                "{{kong_url}}"
+              ],
+              "path": [
+                "avaliacao"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"descricao\": \"Boa aula, exemplos práticos ajudaram.\",\n  \"nota\": 7\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('urgencia = BAIXA', () => pm.expect(pm.response.json().urgencia).to.eql('BAIXA'));",
+                  "pm.test('retorna id e dataEnvio', () => { const b = pm.response.json(); pm.expect(b.id).to.be.a('string'); pm.expect(b.dataEnvio).to.match(/Z$/); });",
+                  "pm.test('X-Correlation-ID do Kong', () => pm.response.to.have.header('X-Correlation-ID'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "BAIXA - nota 10",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_aluno}}"
+              }
+            ],
+            "url": {
+              "raw": "{{kong_url}}/avaliacao",
+              "host": [
+                "{{kong_url}}"
+              ],
+              "path": [
+                "avaliacao"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"descricao\": \"Excelente! Didática impecável.\",\n  \"nota\": 10\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('urgencia = BAIXA', () => pm.expect(pm.response.json().urgencia).to.eql('BAIXA'));",
+                  "pm.test('retorna id e dataEnvio', () => { const b = pm.response.json(); pm.expect(b.id).to.be.a('string'); pm.expect(b.dataEnvio).to.match(/Z$/); });",
+                  "pm.test('X-Correlation-ID do Kong', () => pm.response.to.have.header('X-Correlation-ID'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Casos de erro",
+      "item": [
+        {
+          "name": "401 - sem token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{kong_url}}/avaliacao",
+              "host": [
+                "{{kong_url}}"
+              ],
+              "path": [
+                "avaliacao"
+              ]
+            },
+            "description": "Barrado no Kong (plugin jwt).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"descricao\":\"x\",\"nota\":5}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "401 - token adulterado",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_aluno}}x"
+              }
+            ],
+            "url": {
+              "raw": "{{kong_url}}/avaliacao",
+              "host": [
+                "{{kong_url}}"
+              ],
+              "path": [
+                "avaliacao"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"descricao\":\"x\",\"nota\":5}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "403 - usuário sem role aluno",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{kong_url}}/avaliacao",
+              "host": [
+                "{{kong_url}}"
+              ],
+              "path": [
+                "avaliacao"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"descricao\":\"x\",\"nota\":5}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403', () => pm.response.to.have.status(403));",
+                  "pm.test('erro = SEM_PERMISSAO', () => pm.expect(pm.response.json().erro).to.eql('SEM_PERMISSAO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "400 - nota fora do intervalo (11)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_aluno}}"
+              }
+            ],
+            "url": {
+              "raw": "{{kong_url}}/avaliacao",
+              "host": [
+                "{{kong_url}}"
+              ],
+              "path": [
+                "avaliacao"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"descricao\":\"Nota inválida\",\"nota\":11}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('erro = PAYLOAD_INVALIDO', () => pm.expect(pm.response.json().erro).to.eql('PAYLOAD_INVALIDO'));",
+                  "pm.test('detalhe da nota', () => pm.expect(pm.response.json().detalhes).to.include('nota: deve estar entre 0 e 10'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "400 - nota negativa (-1)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_aluno}}"
+              }
+            ],
+            "url": {
+              "raw": "{{kong_url}}/avaliacao",
+              "host": [
+                "{{kong_url}}"
+              ],
+              "path": [
+                "avaliacao"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"descricao\":\"Nota inválida\",\"nota\":-1}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('erro = PAYLOAD_INVALIDO', () => pm.expect(pm.response.json().erro).to.eql('PAYLOAD_INVALIDO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "400 - nota não inteira (7.5)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_aluno}}"
+              }
+            ],
+            "url": {
+              "raw": "{{kong_url}}/avaliacao",
+              "host": [
+                "{{kong_url}}"
+              ],
+              "path": [
+                "avaliacao"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"descricao\":\"Nota decimal\",\"nota\":7.5}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('erro = PAYLOAD_INVALIDO', () => pm.expect(pm.response.json().erro).to.eql('PAYLOAD_INVALIDO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "400 - descrição vazia",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_aluno}}"
+              }
+            ],
+            "url": {
+              "raw": "{{kong_url}}/avaliacao",
+              "host": [
+                "{{kong_url}}"
+              ],
+              "path": [
+                "avaliacao"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"descricao\":\"   \",\"nota\":5}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('erro = PAYLOAD_INVALIDO', () => pm.expect(pm.response.json().erro).to.eql('PAYLOAD_INVALIDO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "400 - campo fora do contrato (alunoId)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_aluno}}"
+              }
+            ],
+            "url": {
+              "raw": "{{kong_url}}/avaliacao",
+              "host": [
+                "{{kong_url}}"
+              ],
+              "path": [
+                "avaliacao"
+              ]
+            },
+            "description": "alunoId vem SEMPRE do JWT.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"descricao\":\"Tentando forjar aluno\",\"nota\":5,\"alunoId\":\"outro\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('erro = PAYLOAD_INVALIDO', () => pm.expect(pm.response.json().erro).to.eql('PAYLOAD_INVALIDO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "400 - JSON malformado",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_aluno}}"
+              }
+            ],
+            "url": {
+              "raw": "{{kong_url}}/avaliacao",
+              "host": [
+                "{{kong_url}}"
+              ],
+              "path": [
+                "avaliacao"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"descricao\": \"sem fechar"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('erro = PAYLOAD_INVALIDO', () => pm.expect(pm.response.json().erro).to.eql('PAYLOAD_INVALIDO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "429 - rate limit excedido",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_aluno}}"
+              }
+            ],
+            "url": {
+              "raw": "{{kong_url}}/avaliacao",
+              "host": [
+                "{{kong_url}}"
+              ],
+              "path": [
+                "avaliacao"
+              ]
+            },
+            "description": "O pre-request envia requisições até o Kong devolver 429; esta deve receber 429. Aguarde 1 min para voltar a enviar.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"descricao\":\"Depois do limite\",\"nota\":8}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('429', () => pm.response.to.have.status(429));"
+                ]
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Envia requisições inválidas (nada é gravado) até o Kong responder 429 (limite: 30/min por IP).",
+                  "// Sequencial e parando no primeiro 429, para não cruzar a virada da janela de 1 minuto.",
+                  "const url = pm.variables.get('kong_url') + '/avaliacao';",
+                  "const token = pm.variables.get('token_aluno');",
+                  "function disparar(n) {",
+                  "  if (n >= 60) return;",
+                  "  pm.sendRequest({ url, method: 'POST',",
+                  "    header: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },",
+                  "    body: { mode: 'raw', raw: '{\"descricao\":\"rate\",\"nota\":99}' } },",
+                  "    (err, res) => { if (!err && res.code !== 429) disparar(n + 1); });",
+                  "}",
+                  "disparar(0);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

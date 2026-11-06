@@ -1,0 +1,159 @@
+# Overlay do /var/lib/faasd/docker-compose.yaml (faasd 0.19.7), instalado por `make up`.
+# Alterações em relação ao original do faasd:
+#   1. gateway publicado apenas em 127.0.0.1 (nenhuma função exposta sem o Kong);
+#   2. nats-js: NATS com JetStream para os eventos de domínio (o faasd CE usa
+#      NATS Streaming apenas para a fila assíncrona interna do queue-worker);
+#   3. nats-connector: invoca funções anotadas com `topic` a partir dos subjects NATS;
+#   4. cron-connector: invoca funções anotadas com `topic: cron-function` + `schedule`.
+# Serviços do faasd rodam no containerd (namespace openfaas), não no Docker.
+version: "3.7"
+services:
+
+  nats:
+    image: docker.io/library/nats-streaming:0.25.6
+# nobody
+    user: "65534"
+    command:
+      - "/nats-streaming-server"
+      - "-m"
+      - "8222"
+      - "--store=file"
+      - "--dir=/nats"
+      - "--cluster_id=faas-cluster"
+    volumes:
+# Data directory
+      - type: bind
+        source: ./nats
+        target: /nats
+    # ports:
+    #    - "127.0.0.1:8222:8222"
+
+  prometheus:
+    image: docker.io/prom/prometheus:v3.1.0
+# nobody
+    user: "65534"
+    volumes:
+# Config directory
+      - type: bind
+        source: ./prometheus.yml
+        target: /etc/prometheus/prometheus.yml
+# Data directory
+      - type: bind
+        source: ./prometheus
+        target: /prometheus
+    cap_add:
+      - CAP_NET_RAW
+    ports:
+       - "127.0.0.1:9090:9090"
+
+  gateway:
+    image: ghcr.io/openfaas/gateway:0.27.12
+    environment:
+      - basic_auth=true
+      - functions_provider_url=http://faasd-provider:8081/
+      - direct_functions=false
+      - read_timeout=60s
+      - write_timeout=60s
+      - upstream_timeout=65s
+      - faas_nats_address=nats
+      - faas_nats_port=4222
+      - secret_mount_path=/run/secrets
+      - scale_from_zero=true
+      - function_namespace=openfaas-fn
+    volumes:
+      # we assume cwd == /var/lib/faasd
+      - type: bind
+        source: ./secrets/basic-auth-password
+        target: /run/secrets/basic-auth-password
+      - type: bind
+        source: ./secrets/basic-auth-user
+        target: /run/secrets/basic-auth-user
+    cap_add:
+      - CAP_NET_RAW
+    depends_on:
+      - nats
+      - prometheus
+    ports:
+       # Somente loopback: o acesso externo às funções passa obrigatoriamente pelo Kong.
+       - "127.0.0.1:8080:8080"
+
+  queue-worker:
+    image: ghcr.io/openfaas/queue-worker:0.14.2
+    environment:
+      - faas_nats_address=nats
+      - faas_nats_port=4222
+      - gateway_invoke=true
+      - faas_gateway_address=gateway
+      - ack_wait=5m5s
+      - max_inflight=1
+      - write_debug=false
+      - basic_auth=true
+      - secret_mount_path=/run/secrets
+    volumes:
+      # we assume cwd == /var/lib/faasd
+      - type: bind
+        source: ./secrets/basic-auth-password
+        target: /run/secrets/basic-auth-password
+      - type: bind
+        source: ./secrets/basic-auth-user
+        target: /run/secrets/basic-auth-user
+    cap_add:
+      - CAP_NET_RAW
+    depends_on:
+      - nats
+
+  nats-js:
+    image: docker.io/library/nats:2.11-alpine
+    user: "65534"
+    command:
+      - "--jetstream"
+      - "--store_dir=/data"
+      - "--http_port=8222"
+    volumes:
+      - type: bind
+        source: ./nats-js
+        target: /data
+
+  nats-connector:
+    image: ghcr.io/openfaas/nats-connector:0.3.0
+    environment:
+      - broker_host=nats-js
+      - gateway_url=http://gateway:8080
+      - topics=avaliacao.criada,
+      - async_invocation=false
+      - upstream_timeout=60s
+      - rebuild_interval=10s
+      - print_response=true
+      - basic_auth=true
+      - secret_mount_path=/run/secrets
+    volumes:
+      - type: bind
+        source: ./secrets/basic-auth-password
+        target: /run/secrets/basic-auth-password
+      - type: bind
+        source: ./secrets/basic-auth-user
+        target: /run/secrets/basic-auth-user
+    cap_add:
+      - CAP_NET_RAW
+    depends_on:
+      - nats-js
+      - gateway
+
+  cron-connector:
+    image: ghcr.io/openfaas/cron-connector:0.7.0
+    environment:
+      - gateway_url=http://gateway:8080
+      - async_invocation=false
+      - basic_auth=true
+      - secret_mount_path=/run/secrets
+    volumes:
+      - type: bind
+        source: ./secrets/basic-auth-password
+        target: /run/secrets/basic-auth-password
+      - type: bind
+        source: ./secrets/basic-auth-user
+        target: /run/secrets/basic-auth-user
+    cap_add:
+      - CAP_NET_RAW
+    depends_on:
+      - gateway

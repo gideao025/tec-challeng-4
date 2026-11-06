@@ -1,0 +1,83 @@
+{
+  "realm": "feedback",
+  "displayName": "Feedback de Aulas - FIAP",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "bruteForceProtected": true,
+  "failureFactor": 5,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "roles": {
+    "realm": [
+      { "name": "aluno", "description": "Pode enviar avaliações de aulas (POST /avaliacao)" },
+      { "name": "admin", "description": "Recebe alertas e relatórios; lê o bucket de relatórios" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "feedback-app",
+      "name": "Aplicação de feedback (front-end / Postman)",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:3000/*", "https://oauth.pstmn.io/v1/callback"],
+      "webOrigins": ["+"],
+      "attributes": { "pkce.code.challenge.method": "S256" }
+    }
+  ],
+  "users": [
+    {
+      "username": "aluno.demo",
+      "email": "aluno.demo@fiap.local",
+      "firstName": "Aluno",
+      "lastName": "Demo",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "${KC_SENHA_ALUNO_DEMO}", "temporary": false }],
+      "realmRoles": ["aluno"]
+    },
+    {
+      "username": "admin.demo",
+      "email": "admin.demo@fiap.local",
+      "firstName": "Admin",
+      "lastName": "Demo",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "${KC_SENHA_ADMIN_DEMO}", "temporary": false }],
+      "realmRoles": ["admin"]
+    }
+  ],
+  "components": {
+    "org.keycloak.keys.KeyProvider": [
+      {
+        "name": "rsa-feedback",
+        "providerId": "rsa",
+        "subComponents": {},
+        "config": {
+          "priority": ["200"],
+          "enabled": ["true"],
+          "active": ["true"],
+          "algorithm": ["RS256"],
+          "privateKey": ["${KC_RSA_PRIVATE_KEY}"]
+        }
+      },
+      {
+        "name": "hmac-generated",
+        "providerId": "hmac-generated",
+        "subComponents": {},
+        "config": { "priority": ["100"], "algorithm": ["HS512"] }
+      },
+      {
+        "name": "aes-generated",
+        "providerId": "aes-generated",
+        "subComponents": {},
+        "config": { "priority": ["100"] }
+      }
+    ]
+  }
+}

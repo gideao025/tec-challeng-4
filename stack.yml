@@ -1,0 +1,84 @@
+# OpenFaaS (faasd): três funções, uma responsabilidade cada.
+# Variáveis ${...} vêm do .env (o Makefile as exporta antes do faas-cli deploy).
+version: 1.0
+provider:
+  name: openfaas
+  gateway: http://127.0.0.1:8080
+
+functions:
+  # POST /avaliacao (Kong) -> valida, classifica, persiste e publica avaliacao.criada
+  receber-avaliacao:
+    image: ${REGISTRY}/receber-avaliacao:${TAG}
+    labels:
+      com.openfaas.scale.zero: "true"
+    environment:
+      ALTERNATOR_ENDPOINT: http://${HOST_INTERNO}:8200
+      AWS_REGION: us-east-1
+      TABELA_AVALIACOES: avaliacoes
+      FUSO_NEGOCIO: America/Sao_Paulo
+      LIMITE_CRITICA: "3"
+      LIMITE_MODERADA: "6"
+      DESCRICAO_MAX: "1000"
+      NATS_URL: nats://nats-js:4222
+    secrets:
+      - alternator-access-key
+      - alternator-secret-key
+    limits:
+      memory: 256Mi
+    requests:
+      memory: 128Mi
+
+  # Assinante de avaliacao.criada (nats-connector) -> e-mail ao administrador se CRITICA
+  notificar-critico:
+    image: ${REGISTRY}/notificar-critico:${TAG}
+    labels:
+      com.openfaas.scale.zero: "true"
+    annotations:
+      topic: avaliacao.criada
+    environment:
+      ALTERNATOR_ENDPOINT: http://${HOST_INTERNO}:8200
+      AWS_REGION: us-east-1
+      TABELA_NOTIFICACOES: notificacoes
+      FUSO_NEGOCIO: America/Sao_Paulo
+      SMTP_HOST: ${HOST_INTERNO}
+      SMTP_PORT: "1025"
+      EMAIL_REMETENTE: ${EMAIL_REMETENTE}
+      EMAIL_ADMINS: ${EMAIL_ADMINS}
+    secrets:
+      - alternator-access-key
+      - alternator-secret-key
+    limits:
+      memory: 256Mi
+    requests:
+      memory: 128Mi
+
+  # cron-connector: segunda-feira 08:00 em Brasília = 11:00 UTC (o connector usa UTC;
+  # o Brasil não adota horário de verão desde 2019)
+  gerar-relatorio-semanal:
+    image: ${REGISTRY}/gerar-relatorio-semanal:${TAG}
+    labels:
+      com.openfaas.scale.zero: "true"
+    annotations:
+      topic: cron-function
+      schedule: "0 11 * * 1"
+    environment:
+      ALTERNATOR_ENDPOINT: http://${HOST_INTERNO}:8200
+      S3_ENDPOINT: http://${HOST_INTERNO}:9000
+      AWS_REGION: us-east-1
+      TABELA_AVALIACOES: avaliacoes
+      FUSO_NEGOCIO: America/Sao_Paulo
+      BUCKET_RELATORIOS: ${MINIO_BUCKET}
+      MINIO_CONSOLE_URL: http://${CLOUDLAB_HOST}:9001
+      SMTP_HOST: ${HOST_INTERNO}
+      SMTP_PORT: "1025"
+      EMAIL_REMETENTE: ${EMAIL_REMETENTE}
+      EMAIL_ADMINS: ${EMAIL_ADMINS}
+    secrets:
+      - alternator-access-key
+      - alternator-secret-key
+      - minio-access-key
+      - minio-secret-key
+    limits:
+      memory: 320Mi
+    requests:
+      memory: 128Mi

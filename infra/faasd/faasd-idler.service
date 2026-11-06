@@ -1,0 +1,8 @@
+[Unit]
+Description=Scale-to-zero das funções ociosas do faasd
+After=faasd.service
+
+[Service]
+Type=oneshot
+Environment=IDLE_MIN=15
+ExecStart=/usr/local/bin/faasd-idler

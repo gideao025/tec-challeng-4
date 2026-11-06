@@ -1,0 +1,181 @@
+openapi: 3.1.0
+info:
+  title: Feedback de Aulas - API pública
+  version: 0.1.0
+  summary: Recebimento de avaliações de aulas (FIAP Tech Challenge Fase 4)
+  description: |
+    Única rota pública da plataforma, exposta pelo Kong Gateway. O JWT é validado pelo
+    Kong (assinatura RS256, `iss` e `exp`) antes de a requisição chegar à função
+    `receber-avaliacao`; a função exige a role `aluno` e usa a claim `sub` como `alunoId`.
+
+    A urgência não faz parte da entrada: é derivada da nota (0-3 CRITICA, 4-6 MODERADA,
+    7-10 BAIXA) e persistida no recebimento.
+
+    Rota sem acento (`/avaliacao`) para evitar problemas de percent-encoding; o
+    enunciado grafa `/avaliação`.
+  license:
+    name: Uso acadêmico
+    identifier: CC-BY-4.0
+servers:
+  - url: http://cloudlab:8000
+    description: Kong na VM cloudlab (homelab)
+security:
+  - keycloak: []
+tags:
+  - name: avaliacoes
+    description: Envio de avaliações de aulas pelos alunos
+paths:
+  /avaliacao:
+    post:
+      tags: [avaliacoes]
+      operationId: receberAvaliacao
+      summary: Envia a avaliação de uma aula
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NovaAvaliacao"
+            examples:
+              critica:
+                summary: Nota 2 (gera alerta)
+                value: { descricao: "O professor não compareceu e não houve aviso.", nota: 2 }
+              moderada:
+                summary: Nota 5
+                value: { descricao: "Slides desatualizados em relação ao material.", nota: 5 }
+              baixa:
+                summary: Nota 9
+                value: { descricao: "Excelente aula, exemplos práticos ajudaram.", nota: 9 }
+      responses:
+        "201":
+          description: Avaliação registrada.
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AvaliacaoRegistrada"
+              example:
+                id: fd8bd9b2-3eeb-4bc6-993f-7f7948613149
+                urgencia: CRITICA
+                dataEnvio: "2026-11-05T22:09:27.965Z"
+        "400":
+          description: Payload fora do contrato. Todas as violações são listadas em `detalhes`.
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Erro"
+              example:
+                erro: PAYLOAD_INVALIDO
+                mensagem: Avaliação inválida.
+                detalhes: ["campo não permitido: alunoId", "nota: deve estar entre 0 e 10"]
+                correlationId: 261c33de-567c-4b98-9a2a-2366c6aa66ce
+        "401":
+          description: JWT ausente, adulterado, expirado ou de outro emissor (resposta do Kong).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErroKong"
+              example: { message: Unauthorized }
+        "403":
+          description: JWT válido sem a role `aluno`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Erro"
+              example:
+                erro: SEM_PERMISSAO
+                mensagem: Somente usuários com a role 'aluno' podem enviar avaliações.
+                detalhes: []
+                correlationId: 73538985-4d05-440d-aeaa-302bb3454ed3
+        "413":
+          description: Corpo maior que 16 KB (plugin request-size-limiting do Kong).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErroKong"
+        "429":
+          description: Mais de 30 requisições por minuto (ou 500 por hora) do mesmo IP.
+          headers:
+            RateLimit-Limit: { schema: { type: integer }, description: Limite da janela atual }
+            RateLimit-Remaining: { schema: { type: integer }, description: Requisições restantes }
+            RateLimit-Reset: { schema: { type: integer }, description: Segundos até a janela reiniciar }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErroKong"
+              example: { message: "Limite de requisições excedido. Tente novamente em instantes." }
+        "500":
+          description: Erro inesperado na função; informe o correlationId.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Erro"
+components:
+  securitySchemes:
+    keycloak:
+      type: openIdConnect
+      openIdConnectUrl: http://cloudlab:8180/realms/feedback/.well-known/openid-configuration
+      description: Realm `feedback`, client público `feedback-app`. Requer a role de realm `aluno`.
+  parameters:
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      description: Opcional. Se ausente, o Kong gera um UUID; o valor é devolvido na resposta e propagado aos logs e eventos.
+      schema: { type: string }
+  headers:
+    CorrelationId:
+      description: Identificador de correlação da requisição.
+      schema: { type: string }
+  schemas:
+    NovaAvaliacao:
+      type: object
+      additionalProperties: false
+      required: [descricao, nota]
+      properties:
+        descricao:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: Texto livre; não pode ser vazio após remover espaços. Limite configurável (DESCRICAO_MAX).
+        nota:
+          type: integer
+          minimum: 0
+          maximum: 10
+          description: Inteiro de 0 a 10. Strings ("7"), decimais (7.5) e null são rejeitados.
+    Urgencia:
+      type: string
+      enum: [CRITICA, MODERADA, BAIXA]
+    AvaliacaoRegistrada:
+      type: object
+      required: [id, urgencia, dataEnvio]
+      properties:
+        id: { type: string, format: uuid }
+        urgencia: { $ref: "#/components/schemas/Urgencia" }
+        dataEnvio:
+          type: string
+          format: date-time
+          description: Instante do recebimento, UTC, ISO-8601 com milissegundos.
+    Erro:
+      type: object
+      required: [erro, mensagem, detalhes]
+      properties:
+        erro:
+          type: string
+          enum: [PAYLOAD_INVALIDO, NAO_AUTENTICADO, SEM_PERMISSAO, ERRO_INTERNO]
+        mensagem: { type: string }
+        detalhes:
+          type: array
+          items: { type: string }
+        correlationId: { type: string }
+    ErroKong:
+      type: object
+      properties:
+        message: { type: string }
