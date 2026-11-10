@@ -10,7 +10,7 @@ Esta pasta aprofunda cada tema.
 | [api/openapi.yaml](api/openapi.yaml) | consumidores da API | contrato OpenAPI 3.1 de `POST /avaliacao` (exemplos, erros, segurança) |
 | [api/asyncapi.yaml](api/asyncapi.yaml) | quem consome eventos | AsyncAPI 3.0 do CloudEvent `avaliacao.criada` |
 | [adr/](adr/README.md) | arquitetos, banca | 10 decisões de arquitetura com contexto, alternativas e consequências |
-| [arquitetura/](arquitetura/arquitetura.html) | todos | diagrama da solução (abrir `arquitetura.html` no navegador; regenerar com `python3 arquitetura/gerar.py`); prévia em `img/arquitetura.png` |
+| [arquitetura/](arquitetura/arquitetura.html) | todos | diagrama da solução (abrir `arquitetura.html` no navegador; regenerar com `python3 arquitetura/gerar.py`); prévias em `img/arquitetura.png` e `img/visao-geral.png` |
 | [operacao.md](operacao.md) | quem opera a cloudlab | saúde, logs, reprocessamento, rotação de segredos, backup, solução de problemas |
 | [lgpd.md](lgpd.md) | DPO, banca | inventário de dados, princípios, base legal, direitos do titular, retenção, riscos |
 | [exemplos/](exemplos) | todos | e-mails e relatórios **gerados pelas funções reais** |

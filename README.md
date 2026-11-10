@@ -18,6 +18,11 @@ serviços gerenciados da AWS, Azure e OCI. O professor autorizou esse ambiente.
 | Observabilidade | Prometheus · Loki/Alloy · Grafana (dashboard e alertas como código) |
 | Infra como código | Terraform (bpg/proxmox) + cloud-init · docker-compose · stack.yml · Makefile |
 
+![Arquitetura da plataforma: Kong e Keycloak na entrada, três funções no faasd, NATS JetStream, ScyllaDB Alternator, MinIO e observabilidade](docs/img/arquitetura.png)
+
+> Visão geral navegável: [`docs/img/visao-geral.png`](docs/img/visao-geral.png) · fonte HTML em
+> [`docs/arquitetura/`](docs/arquitetura/) · **10 decisões de arquitetura registradas** em [`docs/adr/`](docs/adr/README.md).
+
 ---
 
 ## Sumário
@@ -462,10 +467,7 @@ Notificação por e-mail para `EMAIL_ADMINS` (contact point `administradores`, v
 
 ### Prints
 
-> Capturados na cloudlab após rodar a collection do Postman (ver §15).
-
-![Dashboard Grafana](docs/img/dashboard-grafana.png)
-![Alerta no Mailpit](docs/img/alerta-mailpit.png)
+> Os prints do dashboard e do alerta são capturados na cloudlab após rodar a collection do Postman (ver §15) e ainda não estão versionados.
 
 ---
 
